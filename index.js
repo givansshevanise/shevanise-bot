@@ -379,10 +379,41 @@ async function showSavingState(chatId, item) {
   });
 }
 
-async function showSaveError(chatId) {
+function getUserFacingErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+
+  if (message.includes("object_not_found")) {
+    return "Notion database not found or not shared.";
+  }
+
+  if (message.includes("unauthorized")) {
+    return "Invalid Notion API key.";
+  }
+
+  if (message.includes("validation_error")) {
+    return "Database properties do not match required names/types.";
+  }
+
+  if (message.includes("DATABASE_ID")) {
+    return "Invalid DATABASE_ID value.";
+  }
+
+  if (message.includes("Missing NOTION_API_KEY")) {
+    return "Missing NOTION_API_KEY.";
+  }
+
+  if (message.includes("fetch")) {
+    return "Network error reaching Notion.";
+  }
+
+  return "Check Railway logs for Notion error details.";
+}
+
+async function showSaveError(chatId, error) {
   clearReturnTimer(chatId);
+  const reason = getUserFacingErrorMessage(error);
   await editPanel(chatId, {
-    text: "❌ Failed to save. Try again.",
+    text: `❌ Failed to save.\n${reason}`,
     reply_markup: {
       inline_keyboard: [[{ text: "🔙 Back", callback_data: ACTIONS.BACK_ADD_EXPENSE }]]
     }
@@ -428,7 +459,7 @@ async function handleAction(chatId, action) {
         await showSavedState(chatId, ITEMS[action]);
       } catch (error) {
         console.error("Failed to save expense:", error);
-        await showSaveError(chatId);
+        await showSaveError(chatId, error);
       }
   }
 }
@@ -469,7 +500,7 @@ bot.on("callback_query", async (query) => {
     console.error("Callback handling failed:", error);
 
     try {
-      await showSaveError(chatId);
+      await showSaveError(chatId, error);
     } catch (panelError) {
       console.error("Failed to render error panel:", panelError);
     }
