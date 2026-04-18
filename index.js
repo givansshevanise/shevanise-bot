@@ -220,14 +220,90 @@ async function ensureStartPanel(chatId) {
   state.messageId = sent.message_id;
 }
 
-async function saveExpenseToNotion(item) {
-  const response = await fetch("https://api.notion.com/v1/pages", {
-    method: "POST",
+async function notionRequest(path, options = {}) {
+  const response = await fetch(`https://api.notion.com/v1${path}`, {
+    ...options,
     headers: {
       Authorization: `Bearer ${NOTION_API_KEY}`,
       "Content-Type": "application/json",
-      "Notion-Version": "2022-06-28"
-    },
+      "Notion-Version": "2022-06-28",
+      ...(options.headers || {})
+    }
+  });
+
+  const rawText = await response.text();
+  let body = null;
+
+  if (rawText) {
+    try {
+      body = JSON.parse(rawText);
+    } catch (error) {
+      body = rawText;
+    }
+  }
+
+  if (!response.ok) {
+    const detail =
+      body && typeof body === "object"
+        ? JSON.stringify(body)
+        : String(body || rawText || "Unknown Notion error");
+
+    throw new Error(`Notion API error ${response.status}: ${detail}`);
+  }
+
+  return body;
+}
+
+async function ensureDatabaseSchema(item) {
+  const database = await notionRequest(`/databases/${notionDatabaseId}`, {
+    method: "GET"
+  });
+
+  const properties = database.properties || {};
+  const selectValueMap = {
+    Category: item.category,
+    Essential: "Yes",
+    "Payment Method": "Cash",
+    Type: "Expense"
+  };
+
+  for (const [propertyName, optionName] of Object.entries(selectValueMap)) {
+    const property = properties[propertyName];
+    if (!property || property.type !== "select") {
+      continue;
+    }
+
+    const hasOption = (property.select.options || []).some((option) => option.name === optionName);
+    if (hasOption) {
+      continue;
+    }
+
+    const nextProperties = {
+      ...properties,
+      [propertyName]: {
+        ...property,
+        select: {
+          ...property.select,
+          options: [...(property.select.options || []), { name: optionName }]
+        }
+      }
+    };
+
+    await notionRequest(`/databases/${notionDatabaseId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title: database.title,
+        properties: nextProperties
+      })
+    });
+  }
+}
+
+async function saveExpenseToNotion(item) {
+  await ensureDatabaseSchema(item);
+
+  await notionRequest("/pages", {
+    method: "POST",
     body: JSON.stringify({
       parent: {
         database_id: notionDatabaseId
@@ -273,11 +349,6 @@ async function saveExpenseToNotion(item) {
       }
     })
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Notion API error ${response.status}: ${errorText}`);
-  }
 }
 
 async function showSavedState(chatId, item) {
