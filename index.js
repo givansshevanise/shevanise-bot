@@ -66,10 +66,6 @@ const DEFAULT_ITEMS = [
 ];
 const ITEMS_FILE = path.join(__dirname, "items.json");
 const REMINDER_TIME_ZONE = process.env.REMINDER_TIME_ZONE || "America/New_York";
-const MENU_KEYBOARD = {
-  keyboard: [["Menu"]],
-  resize_keyboard: true
-};
 
 function normalizeStoredItem(item) {
   if (!item || typeof item !== "object") {
@@ -155,7 +151,6 @@ function getPanelState(chatId) {
     messageId: null,
     returnTimer: null,
     currentStep: STEPS.HOME,
-    history: [],
     selectedItem: null,
     customAmount: null,
     receiptFileId: null,
@@ -175,11 +170,6 @@ function resetExpenseState(chatId) {
   state.receiptFileId = null;
   state.pendingNewItem = null;
   state.lastSearchQuery = "";
-}
-
-function resetNavigation(chatId) {
-  const state = getPanelState(chatId);
-  state.history = [];
 }
 
 function isKnownStep(step) {
@@ -204,7 +194,7 @@ function currentAmount(state) {
 
 function homePanel() {
   return {
-    text: "Hey Shevanise\nWhat would you like to do?",
+    text: "Shevanise\nWhat would you like to do?",
     reply_markup: {
       inline_keyboard: [[{ text: "> Finance Tracker", callback_data: ACTIONS.FINANCE }]]
     }
@@ -433,12 +423,7 @@ async function editPanel(chatId, panel) {
 async function sendPanel(chatId, panel) {
   const state = getPanelState(chatId);
   const sent = await bot.sendMessage(chatId, panel.text, {
-    reply_markup: {
-      ...MENU_KEYBOARD,
-      inline_keyboard: panel.reply_markup && panel.reply_markup.inline_keyboard
-        ? panel.reply_markup.inline_keyboard
-        : undefined
-    }
+    reply_markup: panel.reply_markup
   });
 
   state.messageId = sent.message_id;
@@ -461,7 +446,6 @@ async function showMainMenu(chatId, messageId) {
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
   resetExpenseState(chatId);
-  resetNavigation(chatId);
   state.currentStep = STEPS.HOME;
 
   if (messageId) {
@@ -469,13 +453,6 @@ async function showMainMenu(chatId, messageId) {
   }
 
   await editPanel(chatId, homePanel());
-}
-
-function pushHistory(chatId) {
-  const state = getPanelState(chatId);
-  if (isKnownStep(state.currentStep)) {
-    state.history.push(state.currentStep);
-  }
 }
 
 async function renderCurrentStep(chatId) {
@@ -536,24 +513,61 @@ async function renderCurrentStep(chatId) {
 
 async function navigateTo(chatId, nextStep) {
   const state = getPanelState(chatId);
-  if (state.currentStep !== nextStep) {
-    pushHistory(chatId);
-  }
   state.currentStep = nextStep;
   await renderCurrentStep(chatId);
 }
 
 async function navigateBack(chatId) {
   const state = getPanelState(chatId);
-  const previousStep = state.history.pop();
 
-  if (!previousStep || !isKnownStep(previousStep)) {
-    await showMainMenu(chatId);
-    return;
+  switch (state.currentStep) {
+    case STEPS.FINANCE:
+    case STEPS.REMINDER:
+      await showMainMenu(chatId);
+      return;
+    case STEPS.SEARCH:
+      await moveToFinance(chatId);
+      return;
+    case STEPS.SEARCH_RESULTS:
+      await navigateTo(chatId, STEPS.SEARCH);
+      return;
+    case STEPS.ADDING_ITEM_NAME:
+      if (state.lastSearchQuery) {
+        await navigateTo(chatId, STEPS.SEARCH_RESULTS);
+        return;
+      }
+      await navigateTo(chatId, STEPS.SEARCH);
+      return;
+    case STEPS.ADDING_ITEM_AMOUNT:
+      await navigateTo(chatId, STEPS.ADDING_ITEM_NAME);
+      return;
+    case STEPS.ADDING_ITEM_CATEGORY:
+      await navigateTo(chatId, STEPS.ADDING_ITEM_AMOUNT);
+      return;
+    case STEPS.ITEM_SELECTED:
+      if (state.lastSearchQuery) {
+        await navigateTo(chatId, STEPS.SEARCH_RESULTS);
+        return;
+      }
+      await navigateTo(chatId, STEPS.SEARCH);
+      return;
+    case STEPS.AWAITING_AMOUNT:
+      await navigateTo(chatId, STEPS.ITEM_SELECTED);
+      return;
+    case STEPS.CONFIRM:
+      if (state.lastSearchQuery) {
+        await navigateTo(chatId, STEPS.SEARCH_RESULTS);
+        return;
+      }
+      await navigateTo(chatId, STEPS.SEARCH);
+      return;
+    case STEPS.RECEIPT_CHOICE:
+    case STEPS.AWAITING_RECEIPT:
+      await navigateTo(chatId, STEPS.CONFIRM);
+      return;
+    default:
+      await showMainMenu(chatId);
   }
-
-  state.currentStep = previousStep;
-  await renderCurrentStep(chatId);
 }
 
 async function notionRequest(path, options = {}) {
@@ -973,11 +987,6 @@ async function handleTextMessage(msg) {
   await deleteIncomingMessage(chatId, msg.message_id);
 
   if (text === "/start") {
-    return;
-  }
-
-  if (text === "Menu") {
-    await showMainMenu(chatId);
     return;
   }
 
