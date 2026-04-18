@@ -112,6 +112,12 @@ function loadItems() {
 }
 
 const ITEMS = loadItems();
+const INLINE_WIDTH_PAD = "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀";
+
+function padPanelText(text) {
+  return `${text}${INLINE_WIDTH_PAD}`;
+}
+
 function persistItems() {
   fs.writeFileSync(ITEMS_FILE, JSON.stringify(ITEMS, null, 2));
 }
@@ -193,7 +199,7 @@ function currentAmount(state) {
 
 function homePanel() {
   return {
-    text: "Hey Shevanise\nWhat would you like to do?⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Hey Shevanise\nWhat would you like to do?"),
     reply_markup: {
       inline_keyboard: [[{ text: "Finance Tracker", callback_data: ACTIONS.FINANCE }]]
     }
@@ -206,7 +212,7 @@ function backRow() {
 
 function financePanel() {
   return {
-    text: "Finance Tracker\nWhat would you like to do?⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Finance Tracker\nWhat would you like to do?"),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
@@ -220,11 +226,11 @@ function searchPromptPanel(extraText = "") {
   const lines = ["Search Expense", "", "Type to search", "(e.g. Papine, cat food)"];
 
   if (extraText) {
-    lines.push("", `${extraText}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`);
+    lines.push("", extraText);
   }
 
   return {
-    text: `${lines.join("\n")}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(lines.join("\n")),
     reply_markup: {
       inline_keyboard: [backRow()]
     }
@@ -234,7 +240,7 @@ function searchPromptPanel(extraText = "") {
 function resultsPanel(query, matches) {
   if (!matches.length) {
     return {
-      text: "No results found\n\nAdd new item?⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+      text: padPanelText("No results found\n\nAdd new item?"),
       reply_markup: {
         inline_keyboard: [
           [{ text: "Add New", callback_data: ACTIONS.ADD_NEW_ITEM }],
@@ -255,7 +261,7 @@ function resultsPanel(query, matches) {
   keyboard.push(backRow());
 
   return {
-    text: "Results⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Results"),
     reply_markup: {
       inline_keyboard: keyboard
     }
@@ -266,11 +272,11 @@ function addNewNamePanel(extraText = "") {
   const lines = ["Enter item name"];
 
   if (extraText) {
-    lines.push("", `${extraText}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`);
+    lines.push("", extraText);
   }
 
   return {
-    text: `${lines.join("\n")}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(lines.join("\n")),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
@@ -284,11 +290,11 @@ function addNewAmountPanel(extraText = "") {
   const lines = ["Enter amount"];
 
   if (extraText) {
-    lines.push("", `${extraText}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`);
+    lines.push("", extraText);
   }
 
   return {
-    text: `${lines.join("\n")}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(lines.join("\n")),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
@@ -302,11 +308,11 @@ function addNewCategoryPanel(extraText = "") {
   const lines = ["Enter category"];
 
   if (extraText) {
-    lines.push("", `${extraText}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`);
+    lines.push("", extraText);
   }
 
   return {
-    text: `${lines.join("\n")}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(lines.join("\n")),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
@@ -318,7 +324,7 @@ function addNewCategoryPanel(extraText = "") {
 
 function selectedItemPanel(state) {
   return {
-    text: `${state.selectedItem.name}\nAmount: $${state.selectedItem.amount}\n\nAdjust amount?⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(`${state.selectedItem.name}\nAmount: $${state.selectedItem.amount}\n\nAdjust amount?`),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Adjust", callback_data: ACTIONS.ADJUST_AMOUNT }],
@@ -332,7 +338,7 @@ function selectedItemPanel(state) {
 
 function adjustAmountPanel() {
   return {
-    text: "Enter a new amount\n(Type numbers only, e.g. 250)⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Enter a new amount\n(Type numbers only, e.g. 250)"),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
@@ -344,7 +350,7 @@ function adjustAmountPanel() {
 
 function confirmPanel(state) {
   return {
-    text: `Confirm Expense\n\nItem: ${state.selectedItem.name}\nAmount: $${currentAmount(state)}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(`Confirm Expense\n\nItem: ${state.selectedItem.name}\nAmount: $${currentAmount(state)}`),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Confirm", callback_data: ACTIONS.CONFIRM_EXPENSE }],
@@ -357,7 +363,7 @@ function confirmPanel(state) {
 
 function receiptChoicePanel() {
   return {
-    text: "Add receipt?\n\nChoose an option⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Add receipt?\n\nChoose an option"),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Yes", callback_data: ACTIONS.RECEIPT_YES }],
@@ -370,7 +376,7 @@ function receiptChoicePanel() {
 
 function receiptUploadPanel() {
   return {
-    text: "Upload a receipt image now.\n\nWaiting for image⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Upload a receipt image now.\n\nWaiting for image"),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Skip", callback_data: ACTIONS.RECEIPT_SKIP }],
@@ -383,7 +389,7 @@ function receiptUploadPanel() {
 
 function reminderPanel() {
   return {
-    text: "Reminder\nAny expenses to add?⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Reminder\nAny expenses to add?"),
     reply_markup: {
       inline_keyboard: [
         [{ text: "Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
@@ -738,7 +744,7 @@ async function showSavedState(chatId, item) {
     state.messageId = null;
   }
 
-  await bot.sendMessage(chatId, `Saved\n\n${item.name} - $${item.amount}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`).catch((error) => {
+  await bot.sendMessage(chatId, padPanelText(`Saved\n\n${item.name} - $${item.amount}`)).catch((error) => {
     console.error("Failed to send saved confirmation message:", error);
   });
 
@@ -747,7 +753,7 @@ async function showSavedState(chatId, item) {
 
 async function showSavingState(chatId, item) {
   await editPanel(chatId, {
-    text: `Saving\n\n${item.name} - $${item.amount}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(`Saving\n\n${item.name} - $${item.amount}`),
     reply_markup: {
       inline_keyboard: []
     }
@@ -763,7 +769,7 @@ function getUserFacingErrorMessage(error) {
 async function showSaveError(chatId, error) {
   clearReturnTimer(chatId);
   await editPanel(chatId, {
-    text: "Error\nTry again⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    text: padPanelText("Error\nTry again"),
     reply_markup: {
       inline_keyboard: [backRow()]
     }
@@ -827,7 +833,7 @@ async function moveToSelectedItem(chatId, item) {
 
 async function showNewItemCreated(chatId, item) {
   await editPanel(chatId, {
-    text: `New item created\n\n${item.name} - $${item.amount}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀`,
+    text: padPanelText(`New item created\n\n${item.name} - $${item.amount}`),
     reply_markup: {
       inline_keyboard: []
     }
@@ -960,7 +966,7 @@ async function handleAmountInput(chatId, text) {
     const state = getPanelState(chatId);
     state.currentStep = STEPS.AWAITING_AMOUNT;
     await editPanel(chatId, {
-      text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again.⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+      text: padPanelText("Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again."),
       reply_markup: {
         inline_keyboard: [
           [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
