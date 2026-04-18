@@ -299,6 +299,15 @@ async function showSavedState(chatId, item) {
   }, 1500);
 }
 
+async function showSavingState(chatId, item) {
+  await editPanel(chatId, {
+    text: `⏳ Saving...\n${item.name} - $${item.amount}`,
+    reply_markup: {
+      inline_keyboard: []
+    }
+  });
+}
+
 async function showSaveError(chatId) {
   clearReturnTimer(chatId);
   await editPanel(chatId, {
@@ -343,6 +352,7 @@ async function handleAction(chatId, action) {
       }
 
       try {
+        await showSavingState(chatId, ITEMS[action]);
         await saveExpenseToNotion(ITEMS[action]);
         await showSavedState(chatId, ITEMS[action]);
       } catch (error) {
@@ -382,14 +392,10 @@ bot.on("callback_query", async (query) => {
   clearReturnTimer(chatId);
 
   try {
-    await handleAction(chatId, action);
     await bot.answerCallbackQuery(query.id).catch(() => {});
+    await handleAction(chatId, action);
   } catch (error) {
     console.error("Callback handling failed:", error);
-    await bot.answerCallbackQuery(query.id, {
-      text: "Something went wrong.",
-      show_alert: false
-    }).catch(() => {});
 
     try {
       await showSaveError(chatId);
