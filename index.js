@@ -194,23 +194,23 @@ function currentAmount(state) {
 
 function homePanel() {
   return {
-    text: "Shevanise\nWhat would you like to do?",
+    text: "Shevanise\nWhat would you like to do?\n\n------------------------------",
     reply_markup: {
-      inline_keyboard: [[{ text: "> Finance Tracker", callback_data: ACTIONS.FINANCE }]]
+      inline_keyboard: [[{ text: "Finance Tracker", callback_data: ACTIONS.FINANCE }]]
     }
   };
 }
 
 function backRow() {
-  return [{ text: "< Back", callback_data: ACTIONS.GO_BACK }];
+  return [{ text: "Back", callback_data: ACTIONS.GO_BACK }];
 }
 
 function financePanel() {
   return {
-    text: "Finance Tracker\nWhat would you like to do?",
+    text: "Finance Tracker\nWhat would you like to do?\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
+        [{ text: "Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
         backRow()
       ]
     }
@@ -218,11 +218,13 @@ function financePanel() {
 }
 
 function searchPromptPanel(extraText = "") {
-  const lines = ["Search Expense", "", "Type to search:", "(e.g. Papine, cat food)"];
+  const lines = ["Search Expense", "", "Type to search", "(e.g. Papine, cat food)"];
 
   if (extraText) {
     lines.push("", extraText);
   }
+
+  lines.push("", "------------------------------");
 
   return {
     text: lines.join("\n"),
@@ -235,11 +237,11 @@ function searchPromptPanel(extraText = "") {
 function resultsPanel(query, matches) {
   if (!matches.length) {
     return {
-      text: "No results found\n\nAdd new item?",
+      text: "No results found\n\nAdd new item?\n\n------------------------------",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "+ Add New", callback_data: ACTIONS.ADD_NEW_ITEM }],
-          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+          [{ text: "Add New", callback_data: ACTIONS.ADD_NEW_ITEM }],
+          [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
           backRow()
         ]
       }
@@ -256,7 +258,7 @@ function resultsPanel(query, matches) {
   keyboard.push(backRow());
 
   return {
-    text: "Results",
+    text: "Results\n\n------------------------------",
     reply_markup: {
       inline_keyboard: keyboard
     }
@@ -270,11 +272,13 @@ function addNewNamePanel(extraText = "") {
     lines.push("", extraText);
   }
 
+  lines.push("", "------------------------------");
+
   return {
     text: lines.join("\n"),
     reply_markup: {
       inline_keyboard: [
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -288,11 +292,13 @@ function addNewAmountPanel(extraText = "") {
     lines.push("", extraText);
   }
 
+  lines.push("", "------------------------------");
+
   return {
     text: lines.join("\n"),
     reply_markup: {
       inline_keyboard: [
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -306,11 +312,13 @@ function addNewCategoryPanel(extraText = "") {
     lines.push("", extraText);
   }
 
+  lines.push("", "------------------------------");
+
   return {
     text: lines.join("\n"),
     reply_markup: {
       inline_keyboard: [
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -319,12 +327,12 @@ function addNewCategoryPanel(extraText = "") {
 
 function selectedItemPanel(state) {
   return {
-    text: `${state.selectedItem.name}\nAmount: $${state.selectedItem.amount}\n\nAdjust amount?`,
+    text: `${state.selectedItem.name}\nAmount: $${state.selectedItem.amount}\n\nAdjust amount?\n\n------------------------------`,
     reply_markup: {
       inline_keyboard: [
         [{ text: "Adjust", callback_data: ACTIONS.ADJUST_AMOUNT }],
         [{ text: "Keep", callback_data: ACTIONS.KEEP_SAME }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -333,10 +341,10 @@ function selectedItemPanel(state) {
 
 function adjustAmountPanel() {
   return {
-    text: "Enter a new amount\n(Type numbers only, e.g. 250)",
+    text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -345,11 +353,11 @@ function adjustAmountPanel() {
 
 function confirmPanel(state) {
   return {
-    text: `Confirm\n\nItem: ${state.selectedItem.name}\nAmount: $${currentAmount(state)}`,
+    text: `Confirm Expense\n\nItem: ${state.selectedItem.name}\nAmount: $${currentAmount(state)}\n\n------------------------------`,
     reply_markup: {
       inline_keyboard: [
-        [{ text: "✓ Confirm", callback_data: ACTIONS.CONFIRM_EXPENSE }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Confirm", callback_data: ACTIONS.CONFIRM_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -358,7 +366,7 @@ function confirmPanel(state) {
 
 function receiptChoicePanel() {
   return {
-    text: "Add receipt?",
+    text: "Add receipt?\n\nChoose an option\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [
         [{ text: "Yes", callback_data: ACTIONS.RECEIPT_YES }],
@@ -371,11 +379,11 @@ function receiptChoicePanel() {
 
 function receiptUploadPanel() {
   return {
-    text: "Upload a receipt image now.",
+    text: "Upload a receipt image now.\n\nWaiting for image\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [
         [{ text: "Skip", callback_data: ACTIONS.RECEIPT_SKIP }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
         backRow()
       ]
     }
@@ -384,10 +392,10 @@ function receiptUploadPanel() {
 
 function reminderPanel() {
   return {
-    text: "Reminder\nAny expenses to add?",
+    text: "Reminder\nAny expenses to add?\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
+        [{ text: "Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
         backRow()
       ]
     }
@@ -731,7 +739,7 @@ async function saveExpenseToNotion(item, receiptFileId) {
 
 async function showSavedState(chatId, item) {
   await editPanel(chatId, {
-    text: `Saved\n\n${item.name} - $${item.amount}`,
+    text: `Expense Saved\n\n${item.name} - $${item.amount}\n\n------------------------------`,
     reply_markup: {
       inline_keyboard: []
     }
@@ -750,7 +758,7 @@ async function showSavedState(chatId, item) {
 
 async function showSavingState(chatId, item) {
   await editPanel(chatId, {
-    text: `Saving ...\n${item.name} - $${item.amount}`,
+    text: `Saving\n\n${item.name} - $${item.amount}\n\n------------------------------`,
     reply_markup: {
       inline_keyboard: []
     }
@@ -766,7 +774,7 @@ function getUserFacingErrorMessage(error) {
 async function showSaveError(chatId, error) {
   clearReturnTimer(chatId);
   await editPanel(chatId, {
-    text: "Error\nTry again",
+    text: "Error\nTry again\n\n------------------------------",
     reply_markup: {
       inline_keyboard: [backRow()]
     }
@@ -830,7 +838,7 @@ async function moveToSelectedItem(chatId, item) {
 
 async function showNewItemCreated(chatId, item) {
   await editPanel(chatId, {
-    text: `New item created\n\n${item.name} - $${item.amount}`,
+    text: `New item created\n\n${item.name} - $${item.amount}\n\n------------------------------`,
     reply_markup: {
       inline_keyboard: []
     }
@@ -963,10 +971,10 @@ async function handleAmountInput(chatId, text) {
     const state = getPanelState(chatId);
     state.currentStep = STEPS.AWAITING_AMOUNT;
     await editPanel(chatId, {
-      text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again.",
+      text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again.\n\n------------------------------",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+          [{ text: "Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
           backRow()
         ]
       }
