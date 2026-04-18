@@ -47,8 +47,7 @@ const STEPS = {
 const ACTIONS = {
   FINANCE: "finance",
   ADD_EXPENSE: "add_expense",
-  BACK_HOME: "back_home",
-  BACK_FINANCE: "back_finance",
+  GO_BACK: "go_back",
   SELECT_ITEM: "select_item",
   ADD_NEW_ITEM: "add_new_item",
   ADJUST_AMOUNT: "adjust_amount",
@@ -67,6 +66,10 @@ const DEFAULT_ITEMS = [
 ];
 const ITEMS_FILE = path.join(__dirname, "items.json");
 const REMINDER_TIME_ZONE = process.env.REMINDER_TIME_ZONE || "America/New_York";
+const MENU_KEYBOARD = {
+  keyboard: [["Menu"]],
+  resize_keyboard: true
+};
 
 function normalizeStoredItem(item) {
   if (!item || typeof item !== "object") {
@@ -152,6 +155,7 @@ function getPanelState(chatId) {
     messageId: null,
     returnTimer: null,
     currentStep: STEPS.HOME,
+    history: [],
     selectedItem: null,
     customAmount: null,
     receiptFileId: null,
@@ -171,6 +175,15 @@ function resetExpenseState(chatId) {
   state.receiptFileId = null;
   state.pendingNewItem = null;
   state.lastSearchQuery = "";
+}
+
+function resetNavigation(chatId) {
+  const state = getPanelState(chatId);
+  state.history = [];
+}
+
+function isKnownStep(step) {
+  return Object.values(STEPS).includes(step);
 }
 
 function clearReturnTimer(chatId) {
@@ -193,16 +206,23 @@ function homePanel() {
   return {
     text: "Hey Shevanise\nWhat would you like to do?",
     reply_markup: {
-      inline_keyboard: [[{ text: "Finance Tracker", callback_data: ACTIONS.FINANCE }]]
+      inline_keyboard: [[{ text: "> Finance Tracker", callback_data: ACTIONS.FINANCE }]]
     }
   };
+}
+
+function backRow() {
+  return [{ text: "< Back", callback_data: ACTIONS.GO_BACK }];
 }
 
 function financePanel() {
   return {
     text: "Finance Tracker\nWhat would you like to do?",
     reply_markup: {
-      inline_keyboard: [[{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -217,7 +237,7 @@ function searchPromptPanel(extraText = "") {
   return {
     text: lines.join("\n"),
     reply_markup: {
-      inline_keyboard: [[{ text: "Back", callback_data: ACTIONS.BACK_FINANCE }]]
+      inline_keyboard: [backRow()]
     }
   };
 }
@@ -229,7 +249,8 @@ function resultsPanel(query, matches) {
       reply_markup: {
         inline_keyboard: [
           [{ text: "+ Add New", callback_data: ACTIONS.ADD_NEW_ITEM }],
-          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
+          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+          backRow()
         ]
       }
     };
@@ -242,7 +263,7 @@ function resultsPanel(query, matches) {
     }
   ]);
 
-  keyboard.push([{ text: "Back", callback_data: ACTIONS.BACK_FINANCE }]);
+  keyboard.push(backRow());
 
   return {
     text: "Results",
@@ -262,7 +283,10 @@ function addNewNamePanel(extraText = "") {
   return {
     text: lines.join("\n"),
     reply_markup: {
-      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -277,7 +301,10 @@ function addNewAmountPanel(extraText = "") {
   return {
     text: lines.join("\n"),
     reply_markup: {
-      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -292,7 +319,10 @@ function addNewCategoryPanel(extraText = "") {
   return {
     text: lines.join("\n"),
     reply_markup: {
-      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -304,7 +334,8 @@ function selectedItemPanel(state) {
       inline_keyboard: [
         [{ text: "Adjust", callback_data: ACTIONS.ADJUST_AMOUNT }],
         [{ text: "Keep", callback_data: ACTIONS.KEEP_SAME }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
       ]
     }
   };
@@ -314,7 +345,10 @@ function adjustAmountPanel() {
   return {
     text: "Enter a new amount\n(Type numbers only, e.g. 250)",
     reply_markup: {
-      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -325,7 +359,8 @@ function confirmPanel(state) {
     reply_markup: {
       inline_keyboard: [
         [{ text: "✓ Confirm", callback_data: ACTIONS.CONFIRM_EXPENSE }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
       ]
     }
   };
@@ -337,7 +372,8 @@ function receiptChoicePanel() {
     reply_markup: {
       inline_keyboard: [
         [{ text: "Yes", callback_data: ACTIONS.RECEIPT_YES }],
-        [{ text: "No", callback_data: ACTIONS.RECEIPT_NO }]
+        [{ text: "No", callback_data: ACTIONS.RECEIPT_NO }],
+        backRow()
       ]
     }
   };
@@ -349,7 +385,8 @@ function receiptUploadPanel() {
     reply_markup: {
       inline_keyboard: [
         [{ text: "Skip", callback_data: ACTIONS.RECEIPT_SKIP }],
-        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+        backRow()
       ]
     }
   };
@@ -359,7 +396,10 @@ function reminderPanel() {
   return {
     text: "Reminder\nAny expenses to add?",
     reply_markup: {
-      inline_keyboard: [[{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
+        backRow()
+      ]
     }
   };
 }
@@ -367,7 +407,7 @@ function reminderPanel() {
 async function editPanel(chatId, panel) {
   const state = getPanelState(chatId);
   if (!state.messageId) {
-    throw new Error(`No persistent panel message_id stored for chat ${chatId}.`);
+    return sendPanel(chatId, panel);
   }
 
   try {
@@ -385,8 +425,24 @@ async function editPanel(chatId, panel) {
       return;
     }
 
-    throw error;
+    console.error(`Falling back to a new panel for chat ${chatId}:`, error.message || error);
+    await sendPanel(chatId, panel);
   }
+}
+
+async function sendPanel(chatId, panel) {
+  const state = getPanelState(chatId);
+  const sent = await bot.sendMessage(chatId, panel.text, {
+    reply_markup: {
+      ...MENU_KEYBOARD,
+      inline_keyboard: panel.reply_markup && panel.reply_markup.inline_keyboard
+        ? panel.reply_markup.inline_keyboard
+        : undefined
+    }
+  });
+
+  state.messageId = sent.message_id;
+  return sent;
 }
 
 async function deleteIncomingMessage(chatId, messageId) {
@@ -398,22 +454,106 @@ async function deleteIncomingMessage(chatId, messageId) {
 }
 
 async function ensureStartPanel(chatId) {
+  await showMainMenu(chatId);
+}
+
+async function showMainMenu(chatId, messageId) {
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
   resetExpenseState(chatId);
+  resetNavigation(chatId);
   state.currentStep = STEPS.HOME;
 
-  if (state.messageId) {
-    await editPanel(chatId, homePanel());
+  if (messageId) {
+    state.messageId = messageId;
+  }
+
+  await editPanel(chatId, homePanel());
+}
+
+function pushHistory(chatId) {
+  const state = getPanelState(chatId);
+  if (isKnownStep(state.currentStep)) {
+    state.history.push(state.currentStep);
+  }
+}
+
+async function renderCurrentStep(chatId) {
+  const state = getPanelState(chatId);
+
+  switch (state.currentStep) {
+    case STEPS.HOME:
+      await editPanel(chatId, homePanel());
+      return;
+    case STEPS.FINANCE:
+      await editPanel(chatId, financePanel());
+      return;
+    case STEPS.SEARCH:
+      await editPanel(chatId, searchPromptPanel());
+      return;
+    case STEPS.SEARCH_RESULTS:
+      await editPanel(chatId, resultsPanel(state.lastSearchQuery, filterItems(state.lastSearchQuery)));
+      return;
+    case STEPS.ADDING_ITEM_NAME:
+      await editPanel(chatId, addNewNamePanel());
+      return;
+    case STEPS.ADDING_ITEM_AMOUNT:
+      await editPanel(chatId, addNewAmountPanel());
+      return;
+    case STEPS.ADDING_ITEM_CATEGORY:
+      await editPanel(chatId, addNewCategoryPanel("Leave blank to use Other."));
+      return;
+    case STEPS.ITEM_SELECTED:
+      if (!state.selectedItem) {
+        await showMainMenu(chatId);
+        return;
+      }
+      await editPanel(chatId, selectedItemPanel(state));
+      return;
+    case STEPS.AWAITING_AMOUNT:
+      await editPanel(chatId, adjustAmountPanel());
+      return;
+    case STEPS.CONFIRM:
+      if (!state.selectedItem) {
+        await showMainMenu(chatId);
+        return;
+      }
+      await editPanel(chatId, confirmPanel(state));
+      return;
+    case STEPS.RECEIPT_CHOICE:
+      await editPanel(chatId, receiptChoicePanel());
+      return;
+    case STEPS.AWAITING_RECEIPT:
+      await editPanel(chatId, receiptUploadPanel());
+      return;
+    case STEPS.REMINDER:
+      await editPanel(chatId, reminderPanel());
+      return;
+    default:
+      await showMainMenu(chatId);
+  }
+}
+
+async function navigateTo(chatId, nextStep) {
+  const state = getPanelState(chatId);
+  if (state.currentStep !== nextStep) {
+    pushHistory(chatId);
+  }
+  state.currentStep = nextStep;
+  await renderCurrentStep(chatId);
+}
+
+async function navigateBack(chatId) {
+  const state = getPanelState(chatId);
+  const previousStep = state.history.pop();
+
+  if (!previousStep || !isKnownStep(previousStep)) {
+    await showMainMenu(chatId);
     return;
   }
 
-  const panel = homePanel();
-  const sent = await bot.sendMessage(chatId, panel.text, {
-    reply_markup: panel.reply_markup
-  });
-
-  state.messageId = sent.message_id;
+  state.currentStep = previousStep;
+  await renderCurrentStep(chatId);
 }
 
 async function notionRequest(path, options = {}) {
@@ -587,8 +727,8 @@ async function showSavedState(chatId, item) {
   clearReturnTimer(chatId);
 
   state.returnTimer = setTimeout(() => {
-    startSearchFlow(chatId).catch((error) => {
-      console.error("Failed to restore Add Expense panel:", error);
+    showMainMenu(chatId).catch((error) => {
+      console.error("Failed to restore main menu:", error);
     });
     state.returnTimer = null;
   }, 1500);
@@ -614,9 +754,7 @@ async function showSaveError(chatId, error) {
   await editPanel(chatId, {
     text: "Error\nTry again",
     reply_markup: {
-      inline_keyboard: [
-        [{ text: "Back", callback_data: ACTIONS.ADD_EXPENSE }]
-      ]
+      inline_keyboard: [backRow()]
     }
   });
 }
@@ -634,50 +772,38 @@ async function startSearchFlow(chatId) {
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
   resetExpenseState(chatId);
-  state.currentStep = STEPS.SEARCH;
-  await editPanel(chatId, searchPromptPanel());
+  await navigateTo(chatId, STEPS.SEARCH);
 }
 
 async function showSearchResults(chatId, query) {
   const state = getPanelState(chatId);
-  state.currentStep = STEPS.SEARCH_RESULTS;
   state.lastSearchQuery = query;
-  await editPanel(chatId, resultsPanel(query, filterItems(query)));
+  await navigateTo(chatId, STEPS.SEARCH_RESULTS);
 }
 
 async function moveToAddNewName(chatId) {
   const state = getPanelState(chatId);
   state.pendingNewItem = { name: "", amount: null, category: "Other" };
-  state.currentStep = STEPS.ADDING_ITEM_NAME;
-  await editPanel(chatId, addNewNamePanel());
+  await navigateTo(chatId, STEPS.ADDING_ITEM_NAME);
 }
 
 async function moveToAddNewAmount(chatId) {
-  const state = getPanelState(chatId);
-  state.currentStep = STEPS.ADDING_ITEM_AMOUNT;
-  await editPanel(chatId, addNewAmountPanel());
+  await navigateTo(chatId, STEPS.ADDING_ITEM_AMOUNT);
 }
 
 async function moveToAddNewCategory(chatId) {
-  const state = getPanelState(chatId);
-  state.currentStep = STEPS.ADDING_ITEM_CATEGORY;
-  await editPanel(chatId, addNewCategoryPanel("Leave blank to use Other."));
+  await navigateTo(chatId, STEPS.ADDING_ITEM_CATEGORY);
 }
 
 async function moveToFinance(chatId) {
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
   resetExpenseState(chatId);
-  state.currentStep = STEPS.FINANCE;
-  await editPanel(chatId, financePanel());
+  await navigateTo(chatId, STEPS.FINANCE);
 }
 
 async function moveToHome(chatId) {
-  const state = getPanelState(chatId);
-  clearReturnTimer(chatId);
-  resetExpenseState(chatId);
-  state.currentStep = STEPS.HOME;
-  await editPanel(chatId, homePanel());
+  await showMainMenu(chatId);
 }
 
 async function moveToSelectedItem(chatId, item) {
@@ -685,8 +811,7 @@ async function moveToSelectedItem(chatId, item) {
   state.selectedItem = { ...item };
   state.customAmount = null;
   state.receiptFileId = null;
-  state.currentStep = STEPS.ITEM_SELECTED;
-  await editPanel(chatId, selectedItemPanel(state));
+  await navigateTo(chatId, STEPS.ITEM_SELECTED);
 }
 
 async function showNewItemCreated(chatId, item) {
@@ -709,9 +834,7 @@ async function showNewItemCreated(chatId, item) {
 }
 
 async function moveToAdjustAmount(chatId) {
-  const state = getPanelState(chatId);
-  state.currentStep = STEPS.AWAITING_AMOUNT;
-  await editPanel(chatId, adjustAmountPanel());
+  await navigateTo(chatId, STEPS.AWAITING_AMOUNT);
 }
 
 async function moveToConfirm(chatId) {
@@ -721,20 +844,15 @@ async function moveToConfirm(chatId) {
     return;
   }
 
-  state.currentStep = STEPS.CONFIRM;
-  await editPanel(chatId, confirmPanel(state));
+  await navigateTo(chatId, STEPS.CONFIRM);
 }
 
 async function moveToReceiptChoice(chatId) {
-  const state = getPanelState(chatId);
-  state.currentStep = STEPS.RECEIPT_CHOICE;
-  await editPanel(chatId, receiptChoicePanel());
+  await navigateTo(chatId, STEPS.RECEIPT_CHOICE);
 }
 
 async function moveToReceiptUpload(chatId) {
-  const state = getPanelState(chatId);
-  state.currentStep = STEPS.AWAITING_RECEIPT;
-  await editPanel(chatId, receiptUploadPanel());
+  await navigateTo(chatId, STEPS.AWAITING_RECEIPT);
 }
 
 async function saveSelectedExpense(chatId) {
@@ -833,7 +951,10 @@ async function handleAmountInput(chatId, text) {
     await editPanel(chatId, {
       text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again.",
       reply_markup: {
-        inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+        inline_keyboard: [
+          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }],
+          backRow()
+        ]
       }
     });
     return;
@@ -847,11 +968,21 @@ async function handleAmountInput(chatId, text) {
 async function handleTextMessage(msg) {
   const chatId = msg.chat.id;
   const state = getPanelState(chatId);
-  const text = msg.text || "";
+  const text = (msg.text || "").trim();
 
   await deleteIncomingMessage(chatId, msg.message_id);
 
   if (text === "/start") {
+    return;
+  }
+
+  if (text === "Menu") {
+    await showMainMenu(chatId);
+    return;
+  }
+
+  if (!state.messageId || !isKnownStep(state.currentStep)) {
+    await showMainMenu(chatId);
     return;
   }
 
@@ -877,7 +1008,10 @@ async function handleTextMessage(msg) {
 
   if (state.currentStep === STEPS.AWAITING_AMOUNT) {
     await handleAmountInput(chatId, text);
+    return;
   }
+
+  await showMainMenu(chatId);
 }
 
 async function handleReceiptPhoto(msg) {
@@ -887,6 +1021,12 @@ async function handleReceiptPhoto(msg) {
   await deleteIncomingMessage(chatId, msg.message_id);
 
   if (state.currentStep !== STEPS.AWAITING_RECEIPT || !msg.photo || !msg.photo.length) {
+    if (!state.messageId || !isKnownStep(state.currentStep)) {
+      await showMainMenu(chatId);
+      return;
+    }
+
+    await showMainMenu(chatId);
     return;
   }
 
@@ -903,18 +1043,13 @@ async function handleAction(chatId, action) {
     return;
   }
 
-  if (action === ACTIONS.BACK_HOME) {
-    await moveToHome(chatId);
-    return;
-  }
-
-  if (action === ACTIONS.BACK_FINANCE) {
-    await moveToFinance(chatId);
+  if (action === ACTIONS.GO_BACK) {
+    await navigateBack(chatId);
     return;
   }
 
   if (action === ACTIONS.CANCEL_EXPENSE) {
-    await startSearchFlow(chatId);
+    await showMainMenu(chatId);
     return;
   }
 
@@ -968,7 +1103,7 @@ async function handleAction(chatId, action) {
     return;
   }
 
-  await moveToHome(chatId);
+  await showMainMenu(chatId);
 }
 
 function reminderKey(date) {
@@ -1047,6 +1182,12 @@ bot.onText(/^\/start$/, async (msg) => {
 
 bot.on("message", async (msg) => {
   try {
+    const state = getPanelState(msg.chat.id);
+    if (!isKnownStep(state.currentStep)) {
+      await showMainMenu(msg.chat.id);
+      return;
+    }
+
     if (msg.text) {
       await handleTextMessage(msg);
       return;
@@ -1054,7 +1195,10 @@ bot.on("message", async (msg) => {
 
     if (msg.photo) {
       await handleReceiptPhoto(msg);
+      return;
     }
+
+    await showMainMenu(msg.chat.id);
   } catch (error) {
     console.error("Message handling failed:", error);
   }
@@ -1072,6 +1216,10 @@ bot.on("callback_query", async (query) => {
   const state = getPanelState(chatId);
   if (!state.messageId && query.message && query.message.message_id) {
     state.messageId = query.message.message_id;
+  }
+
+  if (!isKnownStep(state.currentStep)) {
+    state.currentStep = STEPS.HOME;
   }
 
   clearReturnTimer(chatId);
