@@ -738,22 +738,20 @@ async function saveExpenseToNotion(item, receiptFileId) {
 }
 
 async function showSavedState(chatId, item) {
-  await editPanel(chatId, {
-    text: `Expense Saved\n\n${item.name} - $${item.amount}\n\n------------------------------`,
-    reply_markup: {
-      inline_keyboard: []
-    }
-  });
-
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
+  const previousMessageId = state.messageId;
 
-  state.returnTimer = setTimeout(() => {
-    showMainMenu(chatId).catch((error) => {
-      console.error("Failed to restore main menu:", error);
-    });
-    state.returnTimer = null;
-  }, 1500);
+  if (previousMessageId) {
+    await bot.deleteMessage(chatId, String(previousMessageId)).catch(() => {});
+    state.messageId = null;
+  }
+
+  await bot.sendMessage(chatId, `Saved\n\n${item.name} - $${item.amount}`).catch((error) => {
+    console.error("Failed to send saved confirmation message:", error);
+  });
+
+  await showMainMenu(chatId);
 }
 
 async function showSavingState(chatId, item) {
