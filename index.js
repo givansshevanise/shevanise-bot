@@ -381,32 +381,33 @@ async function showSavingState(chatId, item) {
 
 function getUserFacingErrorMessage(error) {
   const message = error instanceof Error ? error.message : String(error || "");
+  const normalized = message.replace(/^Notion API error \d+:\s*/i, "").trim();
 
-  if (message.includes("object_not_found")) {
-    return "Notion database not found or not shared.";
+  if (normalized.includes("object_not_found")) {
+    return normalized.slice(0, 180);
   }
 
-  if (message.includes("unauthorized")) {
-    return "Invalid Notion API key.";
+  if (normalized.includes("unauthorized")) {
+    return normalized.slice(0, 180);
   }
 
-  if (message.includes("validation_error")) {
-    return "Database properties do not match required names/types.";
+  if (normalized.includes("validation_error")) {
+    return normalized.slice(0, 180);
   }
 
-  if (message.includes("DATABASE_ID")) {
-    return "Invalid DATABASE_ID value.";
+  if (normalized.includes("DATABASE_ID")) {
+    return normalized.slice(0, 180);
   }
 
-  if (message.includes("Missing NOTION_API_KEY")) {
-    return "Missing NOTION_API_KEY.";
+  if (normalized.includes("Missing NOTION_API_KEY")) {
+    return normalized.slice(0, 180);
   }
 
-  if (message.includes("fetch")) {
-    return "Network error reaching Notion.";
+  if (normalized.includes("fetch")) {
+    return normalized.slice(0, 180);
   }
 
-  return "Check Railway logs for Notion error details.";
+  return normalized.slice(0, 180) || "Unknown error.";
 }
 
 async function showSaveError(chatId, error) {
