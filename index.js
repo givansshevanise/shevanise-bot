@@ -59,6 +59,30 @@ const ITEMS = {
   }
 };
 
+function normalizeNotionDatabaseId(rawValue) {
+  if (!rawValue) {
+    throw new Error("Missing DATABASE_ID environment variable.");
+  }
+
+  const trimmed = rawValue.trim();
+  const urlMatch = trimmed.match(/[0-9a-fA-F]{32}|[0-9a-fA-F-]{36}/);
+  const candidate = urlMatch ? urlMatch[0].replace(/-/g, "") : trimmed.replace(/-/g, "");
+
+  if (!/^[0-9a-fA-F]{32}$/.test(candidate)) {
+    throw new Error("DATABASE_ID must be a Notion database ID or a Notion database URL.");
+  }
+
+  return [
+    candidate.slice(0, 8),
+    candidate.slice(8, 12),
+    candidate.slice(12, 16),
+    candidate.slice(16, 20),
+    candidate.slice(20)
+  ].join("-");
+}
+
+const notionDatabaseId = normalizeNotionDatabaseId(DATABASE_ID);
+
 function getPanelState(chatId) {
   const existing = panelState.get(chatId);
   if (existing) {
@@ -206,7 +230,7 @@ async function saveExpenseToNotion(item) {
     },
     body: JSON.stringify({
       parent: {
-        database_id: DATABASE_ID
+        database_id: notionDatabaseId
       },
       properties: {
         Name: {
@@ -378,6 +402,8 @@ bot.on("callback_query", async (query) => {
 bot.on("polling_error", (error) => {
   console.error("Polling error:", error);
 });
+
+console.log("Using Notion database:", notionDatabaseId);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
