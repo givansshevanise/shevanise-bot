@@ -1,0 +1,17 @@
+{
+  "name": "shevanise-telegram-finance-bot",
+  "version": "1.0.0",
+  "description": "Telegram finance tracker bot with Notion integration",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
