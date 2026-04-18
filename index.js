@@ -1,5 +1,7 @@
 const TelegramBot = require("node-telegram-bot-api");
 const fetch = require("node-fetch");
+const fs = require("fs");
+const path = require("path");
 
 const { TELEGRAM_TOKEN, NOTION_API_KEY, DATABASE_ID } = process.env;
 
@@ -26,38 +28,95 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, {
 
 const panelState = new Map();
 
-const ACTIONS = {
-  START: "start",
+const STEPS = {
+  HOME: "home",
   FINANCE: "finance",
-  ADD_EXPENSE: "add_expense",
-  TRANSPORT: "transport",
-  PET_FOOD: "pet_food",
-  BACK_HOME: "back_home",
-  BACK_FINANCE: "back_finance",
-  BACK_ADD_EXPENSE: "back_add_expense",
-  SAVE_TRANSPORT_TO_PAPINE: "save_transport_to_papine",
-  SAVE_TRANSPORT_FROM_PAPINE: "save_transport_from_papine",
-  SAVE_CAT_FOOD: "save_cat_food",
-  PET_FOOD_PLACEHOLDER: "pet_food_placeholder"
+  SEARCH: "search",
+  SEARCH_RESULTS: "search_results",
+  ADDING_ITEM_NAME: "adding_item_name",
+  ADDING_ITEM_AMOUNT: "adding_item_amount",
+  ADDING_ITEM_CATEGORY: "adding_item_category",
+  ITEM_SELECTED: "item_selected",
+  AWAITING_AMOUNT: "awaiting_amount",
+  CONFIRM: "confirm",
+  RECEIPT_CHOICE: "receipt_choice",
+  AWAITING_RECEIPT: "awaiting_receipt",
+  REMINDER: "reminder"
 };
 
-const ITEMS = {
-  [ACTIONS.SAVE_TRANSPORT_TO_PAPINE]: {
-    name: "Travel to Papine",
-    amount: 200,
-    category: "Transport"
-  },
-  [ACTIONS.SAVE_TRANSPORT_FROM_PAPINE]: {
-    name: "Travel from Papine",
-    amount: 200,
-    category: "Transport"
-  },
-  [ACTIONS.SAVE_CAT_FOOD]: {
-    name: "Cat Food",
-    amount: 500,
-    category: "Food"
-  }
+const ACTIONS = {
+  FINANCE: "finance",
+  ADD_EXPENSE: "add_expense",
+  BACK_HOME: "back_home",
+  BACK_FINANCE: "back_finance",
+  SELECT_ITEM: "select_item",
+  ADD_NEW_ITEM: "add_new_item",
+  ADJUST_AMOUNT: "adjust_amount",
+  KEEP_SAME: "keep_same",
+  CONFIRM_EXPENSE: "confirm_expense",
+  CANCEL_EXPENSE: "cancel_expense",
+  RECEIPT_YES: "receipt_yes",
+  RECEIPT_NO: "receipt_no",
+  RECEIPT_SKIP: "receipt_skip"
 };
+
+const DEFAULT_ITEMS = [
+  { name: "Travel to Papine", amount: 200, category: "Transport" },
+  { name: "Travel from Papine", amount: 200, category: "Transport" },
+  { name: "Cat Food", amount: 500, category: "Food" }
+];
+const ITEMS_FILE = path.join(__dirname, "items.json");
+const REMINDER_TIME_ZONE = process.env.REMINDER_TIME_ZONE || "America/New_York";
+
+function normalizeStoredItem(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const name = typeof item.name === "string" ? item.name.trim() : "";
+  const amount = Number(item.amount);
+  const category =
+    typeof item.category === "string" && item.category.trim() ? item.category.trim() : "Other";
+
+  if (!name || Number.isNaN(amount) || amount <= 0) {
+    return null;
+  }
+
+  return { name, amount, category };
+}
+
+function loadItems() {
+  try {
+    if (!fs.existsSync(ITEMS_FILE)) {
+      fs.writeFileSync(ITEMS_FILE, JSON.stringify(DEFAULT_ITEMS, null, 2));
+      return DEFAULT_ITEMS.map((item) => ({ ...item }));
+    }
+
+    const fileContent = fs.readFileSync(ITEMS_FILE, "utf8");
+    const parsed = JSON.parse(fileContent);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("items.json must contain an array.");
+    }
+
+    const normalized = parsed.map(normalizeStoredItem).filter(Boolean);
+    if (!normalized.length) {
+      fs.writeFileSync(ITEMS_FILE, JSON.stringify(DEFAULT_ITEMS, null, 2));
+      return DEFAULT_ITEMS.map((item) => ({ ...item }));
+    }
+
+    return normalized;
+  } catch (error) {
+    console.error("Failed to load items.json, using defaults:", error);
+    return DEFAULT_ITEMS.map((item) => ({ ...item }));
+  }
+}
+
+const ITEMS = loadItems();
+
+function persistItems() {
+  fs.writeFileSync(ITEMS_FILE, JSON.stringify(ITEMS, null, 2));
+}
 
 function normalizeNotionDatabaseId(rawValue) {
   if (!rawValue) {
@@ -91,11 +150,27 @@ function getPanelState(chatId) {
 
   const initial = {
     messageId: null,
-    returnTimer: null
+    returnTimer: null,
+    currentStep: STEPS.HOME,
+    selectedItem: null,
+    customAmount: null,
+    receiptFileId: null,
+    pendingNewItem: null,
+    lastSearchQuery: "",
+    lastReminderKey: null
   };
 
   panelState.set(chatId, initial);
   return initial;
+}
+
+function resetExpenseState(chatId) {
+  const state = getPanelState(chatId);
+  state.selectedItem = null;
+  state.customAmount = null;
+  state.receiptFileId = null;
+  state.pendingNewItem = null;
+  state.lastSearchQuery = "";
 }
 
 function clearReturnTimer(chatId) {
@@ -106,75 +181,185 @@ function clearReturnTimer(chatId) {
   }
 }
 
+function currentAmount(state) {
+  if (state.customAmount !== null) {
+    return state.customAmount;
+  }
+
+  return state.selectedItem ? state.selectedItem.amount : null;
+}
+
 function homePanel() {
   return {
-    text: "Hey Shevanise 👋\nWhat would you like to do?",
+    text: "Hey Shevanise\nWhat would you like to do?",
     reply_markup: {
-      inline_keyboard: [[{ text: "💰 Finance Tracker", callback_data: ACTIONS.FINANCE }]]
+      inline_keyboard: [[{ text: "Finance Tracker", callback_data: ACTIONS.FINANCE }]]
     }
   };
 }
 
 function financePanel() {
   return {
-    text: "💰 Finance Tracker\nChoose an option:",
+    text: "Finance Tracker\nWhat would you like to do?",
+    reply_markup: {
+      inline_keyboard: [[{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }]]
+    }
+  };
+}
+
+function searchPromptPanel(extraText = "") {
+  const lines = ["Search Expense", "", "Type to search:", "(e.g. Papine, cat food)"];
+
+  if (extraText) {
+    lines.push("", extraText);
+  }
+
+  return {
+    text: lines.join("\n"),
+    reply_markup: {
+      inline_keyboard: [[{ text: "Back", callback_data: ACTIONS.BACK_FINANCE }]]
+    }
+  };
+}
+
+function resultsPanel(query, matches) {
+  if (!matches.length) {
+    return {
+      text: "No results found\n\nAdd new item?",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "+ Add New", callback_data: ACTIONS.ADD_NEW_ITEM }],
+          [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
+        ]
+      }
+    };
+  }
+
+  const keyboard = matches.map((item) => [
+    {
+      text: `${item.name} ($${item.amount})`,
+      callback_data: `${ACTIONS.SELECT_ITEM}:${item.name}`
+    }
+  ]);
+
+  keyboard.push([{ text: "Back", callback_data: ACTIONS.BACK_FINANCE }]);
+
+  return {
+    text: "Results",
+    reply_markup: {
+      inline_keyboard: keyboard
+    }
+  };
+}
+
+function addNewNamePanel(extraText = "") {
+  const lines = ["Enter item name"];
+
+  if (extraText) {
+    lines.push("", extraText);
+  }
+
+  return {
+    text: lines.join("\n"),
+    reply_markup: {
+      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+    }
+  };
+}
+
+function addNewAmountPanel(extraText = "") {
+  const lines = ["Enter amount"];
+
+  if (extraText) {
+    lines.push("", extraText);
+  }
+
+  return {
+    text: lines.join("\n"),
+    reply_markup: {
+      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+    }
+  };
+}
+
+function addNewCategoryPanel(extraText = "") {
+  const lines = ["Enter category"];
+
+  if (extraText) {
+    lines.push("", extraText);
+  }
+
+  return {
+    text: lines.join("\n"),
+    reply_markup: {
+      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+    }
+  };
+}
+
+function selectedItemPanel(state) {
+  return {
+    text: `${state.selectedItem.name}\nAmount: $${state.selectedItem.amount}\n\nAdjust amount?`,
     reply_markup: {
       inline_keyboard: [
-        [{ text: "➕ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }],
-        [{ text: "🔙 Back", callback_data: ACTIONS.BACK_HOME }]
+        [{ text: "Adjust", callback_data: ACTIONS.ADJUST_AMOUNT }],
+        [{ text: "Keep", callback_data: ACTIONS.KEEP_SAME }],
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
       ]
     }
   };
 }
 
-function addExpensePanel() {
+function adjustAmountPanel() {
   return {
-    text: "🔎 Search or select an expense",
+    text: "Enter a new amount\n(Type numbers only, e.g. 250)",
+    reply_markup: {
+      inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+    }
+  };
+}
+
+function confirmPanel(state) {
+  return {
+    text: `Confirm\n\nItem: ${state.selectedItem.name}\nAmount: $${currentAmount(state)}`,
     reply_markup: {
       inline_keyboard: [
-        [{ text: "🚕 Transport", callback_data: ACTIONS.TRANSPORT }],
-        [{ text: "🐱 Pet Food", callback_data: ACTIONS.PET_FOOD }],
-        [{ text: "🔙 Back", callback_data: ACTIONS.BACK_FINANCE }]
+        [{ text: "✓ Confirm", callback_data: ACTIONS.CONFIRM_EXPENSE }],
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
       ]
     }
   };
 }
 
-function transportPanel() {
+function receiptChoicePanel() {
   return {
-    text: "🚕 Transport Options",
+    text: "Add receipt?",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Travel to Papine ($200)", callback_data: ACTIONS.SAVE_TRANSPORT_TO_PAPINE }],
-        [{ text: "Travel from Papine ($200)", callback_data: ACTIONS.SAVE_TRANSPORT_FROM_PAPINE }],
-        [{ text: "🔙 Back", callback_data: ACTIONS.BACK_ADD_EXPENSE }]
+        [{ text: "Yes", callback_data: ACTIONS.RECEIPT_YES }],
+        [{ text: "No", callback_data: ACTIONS.RECEIPT_NO }]
       ]
     }
   };
 }
 
-function petFoodPanel() {
+function receiptUploadPanel() {
   return {
-    text: "🐱 Pet Food Options",
+    text: "Upload a receipt image now.",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Cat Food ($500)", callback_data: ACTIONS.SAVE_CAT_FOOD }],
-        [{ text: "➕ Add New Item (future support placeholder)", callback_data: ACTIONS.PET_FOOD_PLACEHOLDER }],
-        [{ text: "🔙 Back", callback_data: ACTIONS.BACK_ADD_EXPENSE }]
+        [{ text: "Skip", callback_data: ACTIONS.RECEIPT_SKIP }],
+        [{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]
       ]
     }
   };
 }
 
-function placeholderPanel() {
+function reminderPanel() {
   return {
-    text: "🐱 Pet Food Options\nAdd New Item is not available yet.",
+    text: "Reminder\nAny expenses to add?",
     reply_markup: {
-      inline_keyboard: [
-        [{ text: "Cat Food ($500)", callback_data: ACTIONS.SAVE_CAT_FOOD }],
-        [{ text: "➕ Add New Item (future support placeholder)", callback_data: ACTIONS.PET_FOOD_PLACEHOLDER }],
-        [{ text: "🔙 Back", callback_data: ACTIONS.BACK_ADD_EXPENSE }]
-      ]
+      inline_keyboard: [[{ text: "+ Add Expense", callback_data: ACTIONS.ADD_EXPENSE }]]
     }
   };
 }
@@ -192,7 +377,6 @@ async function editPanel(chatId, panel) {
       reply_markup: panel.reply_markup
     });
   } catch (error) {
-    // Telegram returns this when the content is unchanged; this is harmless.
     if (
       error.response &&
       error.response.body &&
@@ -200,21 +384,33 @@ async function editPanel(chatId, panel) {
     ) {
       return;
     }
+
     throw error;
   }
+}
+
+async function deleteIncomingMessage(chatId, messageId) {
+  if (!messageId) {
+    return;
+  }
+
+  await bot.deleteMessage(chatId, String(messageId)).catch(() => {});
 }
 
 async function ensureStartPanel(chatId) {
   const state = getPanelState(chatId);
   clearReturnTimer(chatId);
+  resetExpenseState(chatId);
+  state.currentStep = STEPS.HOME;
 
   if (state.messageId) {
     await editPanel(chatId, homePanel());
     return;
   }
 
-  const sent = await bot.sendMessage(chatId, homePanel().text, {
-    reply_markup: homePanel().reply_markup
+  const panel = homePanel();
+  const sent = await bot.sendMessage(chatId, panel.text, {
+    reply_markup: panel.reply_markup
   });
 
   state.messageId = sent.message_id;
@@ -297,63 +493,91 @@ async function ensureDatabaseSchema(item) {
       })
     });
   }
+
+  if (!properties.Notes) {
+    await notionRequest(`/databases/${notionDatabaseId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title: database.title,
+        properties: {
+          Notes: {
+            rich_text: {}
+          }
+        }
+      })
+    });
+  }
 }
 
-async function saveExpenseToNotion(item) {
+async function saveExpenseToNotion(item, receiptFileId) {
   await ensureDatabaseSchema(item);
 
-  await notionRequest("/pages", {
+  const properties = {
+    Name: {
+      title: [
+        {
+          text: {
+            content: item.name
+          }
+        }
+      ]
+    },
+    Amount: {
+      number: item.amount
+    },
+    Category: {
+      select: {
+        name: item.category
+      }
+    },
+    Essential: {
+      select: {
+        name: "Yes"
+      }
+    },
+    "Payment Method": {
+      select: {
+        name: "Cash"
+      }
+    },
+    Type: {
+      select: {
+        name: "Expense"
+      }
+    },
+    Date: {
+      date: {
+        start: new Date().toISOString()
+      }
+    }
+  };
+
+  if (receiptFileId) {
+    properties.Notes = {
+      rich_text: [
+        {
+          text: {
+            content: "Receipt attached"
+          }
+        }
+      ]
+    };
+  }
+
+  return notionRequest("/pages", {
     method: "POST",
     body: JSON.stringify({
       parent: {
         database_id: notionDatabaseId
       },
-      properties: {
-        Name: {
-          title: [
-            {
-              text: {
-                content: item.name
-              }
-            }
-          ]
-        },
-        Amount: {
-          number: item.amount
-        },
-        Category: {
-          select: {
-            name: item.category
-          }
-        },
-        Essential: {
-          select: {
-            name: "Yes"
-          }
-        },
-        "Payment Method": {
-          select: {
-            name: "Cash"
-          }
-        },
-        Type: {
-          select: {
-            name: "Expense"
-          }
-        },
-        Date: {
-          date: {
-            start: new Date().toISOString()
-          }
-        }
-      }
+      properties
     })
   });
 }
 
 async function showSavedState(chatId, item) {
   await editPanel(chatId, {
-    text: `✅ Saved:\n${item.name} - $${item.amount}`,
+    text: `Saved\n\n${item.name} - $${item.amount}`,
     reply_markup: {
       inline_keyboard: []
     }
@@ -363,7 +587,7 @@ async function showSavedState(chatId, item) {
   clearReturnTimer(chatId);
 
   state.returnTimer = setTimeout(() => {
-    editPanel(chatId, addExpensePanel()).catch((error) => {
+    startSearchFlow(chatId).catch((error) => {
       console.error("Failed to restore Add Expense panel:", error);
     });
     state.returnTimer = null;
@@ -372,7 +596,7 @@ async function showSavedState(chatId, item) {
 
 async function showSavingState(chatId, item) {
   await editPanel(chatId, {
-    text: `⏳ Saving...\n${item.name} - $${item.amount}`,
+    text: `Saving ...\n${item.name} - $${item.amount}`,
     reply_markup: {
       inline_keyboard: []
     }
@@ -382,99 +606,457 @@ async function showSavingState(chatId, item) {
 function getUserFacingErrorMessage(error) {
   const message = error instanceof Error ? error.message : String(error || "");
   const normalized = message.replace(/^Notion API error \d+:\s*/i, "").trim();
-
-  if (normalized.includes("object_not_found")) {
-    return normalized.slice(0, 180);
-  }
-
-  if (normalized.includes("unauthorized")) {
-    return normalized.slice(0, 180);
-  }
-
-  if (normalized.includes("validation_error")) {
-    return normalized.slice(0, 180);
-  }
-
-  if (normalized.includes("DATABASE_ID")) {
-    return normalized.slice(0, 180);
-  }
-
-  if (normalized.includes("Missing NOTION_API_KEY")) {
-    return normalized.slice(0, 180);
-  }
-
-  if (normalized.includes("fetch")) {
-    return normalized.slice(0, 180);
-  }
-
   return normalized.slice(0, 180) || "Unknown error.";
 }
 
 async function showSaveError(chatId, error) {
   clearReturnTimer(chatId);
-  const reason = getUserFacingErrorMessage(error);
   await editPanel(chatId, {
-    text: `❌ Failed to save.\n${reason}`,
+    text: "Error\nTry again",
     reply_markup: {
-      inline_keyboard: [[{ text: "🔙 Back", callback_data: ACTIONS.BACK_ADD_EXPENSE }]]
+      inline_keyboard: [
+        [{ text: "Back", callback_data: ACTIONS.ADD_EXPENSE }]
+      ]
     }
   });
 }
 
-async function handleAction(chatId, action) {
-  switch (action) {
-    case ACTIONS.START:
-    case ACTIONS.BACK_HOME:
-      await editPanel(chatId, homePanel());
-      return;
-    case ACTIONS.FINANCE:
-      await editPanel(chatId, financePanel());
-      return;
-    case ACTIONS.ADD_EXPENSE:
-      await editPanel(chatId, addExpensePanel());
-      return;
-    case ACTIONS.TRANSPORT:
-      await editPanel(chatId, transportPanel());
-      return;
-    case ACTIONS.PET_FOOD:
-      await editPanel(chatId, petFoodPanel());
-      return;
-    case ACTIONS.BACK_FINANCE:
-      await editPanel(chatId, financePanel());
-      return;
-    case ACTIONS.BACK_ADD_EXPENSE:
-      await editPanel(chatId, addExpensePanel());
-      return;
-    case ACTIONS.PET_FOOD_PLACEHOLDER:
-      await editPanel(chatId, placeholderPanel());
-      return;
-    default:
-      if (!ITEMS[action]) {
-        await editPanel(chatId, homePanel());
-        return;
-      }
+function findItemByName(name) {
+  return ITEMS.find((item) => item.name === name) || null;
+}
 
-      try {
-        await showSavingState(chatId, ITEMS[action]);
-        await saveExpenseToNotion(ITEMS[action]);
-        await showSavedState(chatId, ITEMS[action]);
-      } catch (error) {
-        console.error("Failed to save expense:", error);
-        await showSaveError(chatId, error);
-      }
+function filterItems(query) {
+  const normalized = query.trim().toLowerCase();
+  return ITEMS.filter((item) => item.name.toLowerCase().includes(normalized));
+}
+
+async function startSearchFlow(chatId) {
+  const state = getPanelState(chatId);
+  clearReturnTimer(chatId);
+  resetExpenseState(chatId);
+  state.currentStep = STEPS.SEARCH;
+  await editPanel(chatId, searchPromptPanel());
+}
+
+async function showSearchResults(chatId, query) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.SEARCH_RESULTS;
+  state.lastSearchQuery = query;
+  await editPanel(chatId, resultsPanel(query, filterItems(query)));
+}
+
+async function moveToAddNewName(chatId) {
+  const state = getPanelState(chatId);
+  state.pendingNewItem = { name: "", amount: null, category: "Other" };
+  state.currentStep = STEPS.ADDING_ITEM_NAME;
+  await editPanel(chatId, addNewNamePanel());
+}
+
+async function moveToAddNewAmount(chatId) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.ADDING_ITEM_AMOUNT;
+  await editPanel(chatId, addNewAmountPanel());
+}
+
+async function moveToAddNewCategory(chatId) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.ADDING_ITEM_CATEGORY;
+  await editPanel(chatId, addNewCategoryPanel("Leave blank to use Other."));
+}
+
+async function moveToFinance(chatId) {
+  const state = getPanelState(chatId);
+  clearReturnTimer(chatId);
+  resetExpenseState(chatId);
+  state.currentStep = STEPS.FINANCE;
+  await editPanel(chatId, financePanel());
+}
+
+async function moveToHome(chatId) {
+  const state = getPanelState(chatId);
+  clearReturnTimer(chatId);
+  resetExpenseState(chatId);
+  state.currentStep = STEPS.HOME;
+  await editPanel(chatId, homePanel());
+}
+
+async function moveToSelectedItem(chatId, item) {
+  const state = getPanelState(chatId);
+  state.selectedItem = { ...item };
+  state.customAmount = null;
+  state.receiptFileId = null;
+  state.currentStep = STEPS.ITEM_SELECTED;
+  await editPanel(chatId, selectedItemPanel(state));
+}
+
+async function showNewItemCreated(chatId, item) {
+  await editPanel(chatId, {
+    text: `New item created\n\n${item.name} - $${item.amount}`,
+    reply_markup: {
+      inline_keyboard: []
+    }
+  });
+
+  const state = getPanelState(chatId);
+  clearReturnTimer(chatId);
+
+  state.returnTimer = setTimeout(() => {
+    moveToConfirm(chatId).catch((error) => {
+      console.error("Failed to move to confirm after new item creation:", error);
+    });
+    state.returnTimer = null;
+  }, 1500);
+}
+
+async function moveToAdjustAmount(chatId) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.AWAITING_AMOUNT;
+  await editPanel(chatId, adjustAmountPanel());
+}
+
+async function moveToConfirm(chatId) {
+  const state = getPanelState(chatId);
+  if (!state.selectedItem) {
+    await startSearchFlow(chatId);
+    return;
+  }
+
+  state.currentStep = STEPS.CONFIRM;
+  await editPanel(chatId, confirmPanel(state));
+}
+
+async function moveToReceiptChoice(chatId) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.RECEIPT_CHOICE;
+  await editPanel(chatId, receiptChoicePanel());
+}
+
+async function moveToReceiptUpload(chatId) {
+  const state = getPanelState(chatId);
+  state.currentStep = STEPS.AWAITING_RECEIPT;
+  await editPanel(chatId, receiptUploadPanel());
+}
+
+async function saveSelectedExpense(chatId) {
+  const state = getPanelState(chatId);
+  if (!state.selectedItem) {
+    await startSearchFlow(chatId);
+    return;
+  }
+
+  const itemToSave = {
+    ...state.selectedItem,
+    amount: currentAmount(state)
+  };
+
+  try {
+    await showSavingState(chatId, itemToSave);
+    const notionPage = await saveExpenseToNotion(itemToSave, state.receiptFileId);
+    console.log("Created Notion page:", notionPage && notionPage.url ? notionPage.url : notionPage && notionPage.id);
+    await showSavedState(chatId, itemToSave);
+  } catch (error) {
+    console.error("Failed to save expense:", error);
+    await showSaveError(chatId, error);
   }
 }
+
+async function handleSearchInput(chatId, text) {
+  const query = text.trim();
+  if (!query) {
+    await editPanel(chatId, searchPromptPanel("Please type a search term."));
+    return;
+  }
+
+  await showSearchResults(chatId, query);
+}
+
+async function handleNewItemNameInput(chatId, text) {
+  const name = text.trim();
+  if (!name) {
+    await editPanel(chatId, addNewNamePanel("Name cannot be empty."));
+    return;
+  }
+
+  const state = getPanelState(chatId);
+  state.pendingNewItem = state.pendingNewItem || { name: "", amount: null, category: "Other" };
+  state.pendingNewItem.name = name;
+  await moveToAddNewAmount(chatId);
+}
+
+async function handleNewItemAmountInput(chatId, text) {
+  const normalized = text.replace(/[^0-9.]/g, "");
+  const amount = Number(normalized);
+
+  if (!normalized || Number.isNaN(amount) || amount <= 0) {
+    await editPanel(chatId, addNewAmountPanel("Invalid amount. Try again."));
+    return;
+  }
+
+  const state = getPanelState(chatId);
+  state.pendingNewItem = state.pendingNewItem || { name: "", amount: null, category: "Other" };
+  state.pendingNewItem.amount = amount;
+  await moveToAddNewCategory(chatId);
+}
+
+async function handleNewItemCategoryInput(chatId, text) {
+  const state = getPanelState(chatId);
+  const draft = state.pendingNewItem;
+
+  if (!draft || !draft.name || draft.amount === null) {
+    await moveToAddNewName(chatId);
+    return;
+  }
+
+  const category = text.trim() || "Other";
+  const newItem = {
+    name: draft.name,
+    amount: draft.amount,
+    category
+  };
+
+  ITEMS.push(newItem);
+  persistItems();
+  state.selectedItem = { ...newItem };
+  state.customAmount = newItem.amount;
+  state.receiptFileId = null;
+  state.pendingNewItem = null;
+  await showNewItemCreated(chatId, newItem);
+}
+
+async function handleAmountInput(chatId, text) {
+  const normalized = text.replace(/[^0-9.]/g, "");
+  const amount = Number(normalized);
+
+  if (!normalized || Number.isNaN(amount) || amount <= 0) {
+    const state = getPanelState(chatId);
+    state.currentStep = STEPS.AWAITING_AMOUNT;
+    await editPanel(chatId, {
+      text: "Enter a new amount\n(Type numbers only, e.g. 250)\n\nInvalid amount. Try again.",
+      reply_markup: {
+        inline_keyboard: [[{ text: "× Cancel", callback_data: ACTIONS.CANCEL_EXPENSE }]]
+      }
+    });
+    return;
+  }
+
+  const state = getPanelState(chatId);
+  state.customAmount = amount;
+  await moveToConfirm(chatId);
+}
+
+async function handleTextMessage(msg) {
+  const chatId = msg.chat.id;
+  const state = getPanelState(chatId);
+  const text = msg.text || "";
+
+  await deleteIncomingMessage(chatId, msg.message_id);
+
+  if (text === "/start") {
+    return;
+  }
+
+  if (state.currentStep === STEPS.SEARCH || state.currentStep === STEPS.SEARCH_RESULTS) {
+    await handleSearchInput(chatId, text);
+    return;
+  }
+
+  if (state.currentStep === STEPS.ADDING_ITEM_NAME) {
+    await handleNewItemNameInput(chatId, text);
+    return;
+  }
+
+  if (state.currentStep === STEPS.ADDING_ITEM_AMOUNT) {
+    await handleNewItemAmountInput(chatId, text);
+    return;
+  }
+
+  if (state.currentStep === STEPS.ADDING_ITEM_CATEGORY) {
+    await handleNewItemCategoryInput(chatId, text);
+    return;
+  }
+
+  if (state.currentStep === STEPS.AWAITING_AMOUNT) {
+    await handleAmountInput(chatId, text);
+  }
+}
+
+async function handleReceiptPhoto(msg) {
+  const chatId = msg.chat.id;
+  const state = getPanelState(chatId);
+
+  await deleteIncomingMessage(chatId, msg.message_id);
+
+  if (state.currentStep !== STEPS.AWAITING_RECEIPT || !msg.photo || !msg.photo.length) {
+    return;
+  }
+
+  const largestPhoto = msg.photo[msg.photo.length - 1];
+  state.receiptFileId = largestPhoto.file_id;
+  await saveSelectedExpense(chatId);
+}
+
+async function handleAction(chatId, action) {
+  const state = getPanelState(chatId);
+
+  if (action === ACTIONS.FINANCE) {
+    await moveToFinance(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.BACK_HOME) {
+    await moveToHome(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.BACK_FINANCE) {
+    await moveToFinance(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.CANCEL_EXPENSE) {
+    await startSearchFlow(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.ADD_EXPENSE) {
+    await startSearchFlow(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.ADD_NEW_ITEM) {
+    await moveToAddNewName(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.ADJUST_AMOUNT) {
+    await moveToAdjustAmount(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.KEEP_SAME) {
+    state.customAmount = state.selectedItem ? state.selectedItem.amount : null;
+    await moveToConfirm(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.CONFIRM_EXPENSE) {
+    await moveToReceiptChoice(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.RECEIPT_YES) {
+    await moveToReceiptUpload(chatId);
+    return;
+  }
+
+  if (action === ACTIONS.RECEIPT_NO || action === ACTIONS.RECEIPT_SKIP) {
+    state.receiptFileId = null;
+    await saveSelectedExpense(chatId);
+    return;
+  }
+
+  if (action.startsWith(`${ACTIONS.SELECT_ITEM}:`)) {
+    const itemName = action.slice(`${ACTIONS.SELECT_ITEM}:`.length);
+    const item = findItemByName(itemName);
+
+    if (!item) {
+      await startSearchFlow(chatId);
+      return;
+    }
+
+    await moveToSelectedItem(chatId, item);
+    return;
+  }
+
+  await moveToHome(chatId);
+}
+
+function reminderKey(date) {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function getReminderClockParts(date) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: REMINDER_TIME_ZONE,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false
+  });
+
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute)
+  };
+}
+
+async function runReminderTick() {
+  const now = new Date();
+  const clock = getReminderClockParts(now);
+  if (clock.hour !== 17 || clock.minute !== 0) {
+    return;
+  }
+
+  const todayKey = reminderKey(new Date(clock.year, clock.month - 1, clock.day));
+
+  for (const [chatId, state] of panelState.entries()) {
+    if (!state.messageId || state.lastReminderKey === todayKey) {
+      continue;
+    }
+
+    state.lastReminderKey = todayKey;
+    state.currentStep = STEPS.REMINDER;
+    resetExpenseState(chatId);
+
+    try {
+      await editPanel(chatId, reminderPanel());
+    } catch (error) {
+      console.error(`Failed to send reminder panel for chat ${chatId}:`, error);
+    }
+  }
+}
+
+setInterval(() => {
+  runReminderTick().catch((error) => {
+    console.error("Reminder tick failed:", error);
+  });
+}, 30000);
 
 bot.onText(/^\/start$/, async (msg) => {
   const chatId = msg.chat.id;
 
   try {
-    if (msg.message_id) {
-      await bot.deleteMessage(chatId, String(msg.message_id)).catch(() => {});
-    }
+    await deleteIncomingMessage(chatId, msg.message_id);
     await ensureStartPanel(chatId);
   } catch (error) {
     console.error("Failed to initialize start panel:", error);
+  }
+});
+
+bot.on("message", async (msg) => {
+  try {
+    if (msg.text) {
+      await handleTextMessage(msg);
+      return;
+    }
+
+    if (msg.photo) {
+      await handleReceiptPhoto(msg);
+    }
+  } catch (error) {
+    console.error("Message handling failed:", error);
   }
 });
 
@@ -513,6 +1095,7 @@ bot.on("polling_error", (error) => {
 });
 
 console.log("Using Notion database:", notionDatabaseId);
+console.log("Reminder timezone:", REMINDER_TIME_ZONE);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
